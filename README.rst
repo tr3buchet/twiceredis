@@ -16,8 +16,15 @@ one for master and one for slaves:
 these clients are each backed by a separate ``SentinelConnectionPool``
 initialized to connect to the master or slaves respectively
 
-``TwiceRedis`` also uses a ``DisconnectingSentinel`` class to drastically reduce the
-number of active connections to the redis sentinel service(s)
+``TwiceRedis`` also uses a ``DisconnectingSentinel`` class to drastically
+reduce the number of active connections to the redis sentinel service(s).
+This class drops connection to the chosen sentinel once the master or
+slave has been chosen.
+
+The ``DisconnectionSentinel`` class also filters slaves a little more
+intelligently than the base ``Sentinel`` class does. In addition to
+insuring slaves are not ``sdown`` or ``odown`` it makes sure the slaves
+``master-link-status`` is 'ok'.
 
 ``TwiceRedis`` randomizes the sentinel list so each ``TwiceRedis``
 object will be connecting to a random sentinel in the list instead of
@@ -26,8 +33,10 @@ this shuffling is probably a bit superfluous used in conjunction with
 ``DisconnectingSentinel``, but at worst will reduce the load on the
 first sentinel in the ``sentinels`` list
 
+
+~~~~~
 usage
-=====
+~~~~~
 .. code:: python
 
     from twiceredis import TwiceRedis
@@ -37,7 +46,7 @@ usage
     tr = TwiceRedis('master01', sentinels, 'tötes_passowrd')
     x = tr.slave.get('superkey')
     tr.master.set('je mange', 'huehue')
-    x = tr.read.get('je mange')
+    x = tr.read.get('nous mangeons')
     tr.write.del('superkey')
 
 pipelines work great too, you just have decide whether you need to write
@@ -64,10 +73,12 @@ and chances are you'll hit a different slave
 
     x = tr.slave.get('some other key')
 
-it also disconnects any connection under ``tr.master`` as well, but you'll end up
-back on the same node when you do anything with ``tr.master`` that connects  unless
-the master has changed in the meantime
+it also disconnects any connection under ``tr.master`` as well, but you'll end
+up back on the same node when you do anything with ``tr.master`` that connects
+unless the master has changed in the meantime
 
+
+~~~~~~~
 install
-=======
-* ``pip install twiceredis`` or clone the repo and ``python setup.py install``
+~~~~~~~
+``pip install twiceredis`` or clone the repo and ``python setup.py install``

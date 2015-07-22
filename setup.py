@@ -24,7 +24,7 @@ print find_packages()
 
 setup(
     name='twiceredis',
-    version='1.0.0',
+    version='1.0.1',
     author='Trey Morris',
     author_email='trey@treymorris.com',
     description='sentinel pool backed read and write redis client',
