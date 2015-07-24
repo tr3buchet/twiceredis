@@ -18,6 +18,7 @@
 
 import redis
 from redis import sentinel
+from redis import exceptions
 import random
 
 
@@ -57,6 +58,8 @@ class TwiceRedis(object):
     """
     read and write sentinel connection pool backed redis client
     """
+    generic_error = exceptions.RedisError
+
     def __init__(selfie, master_name, sentinels, password=None,
                  check_connection=False, socket_timeout=None,
                  min_other_sentinels=0,
