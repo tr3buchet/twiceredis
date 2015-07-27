@@ -107,6 +107,8 @@ class TwiceRedis(object):
     def read(selfie):
         return selfie.read_client
 
-    def disconnect(selfie):
-        selfie.write_client.connection_pool.disconnect()
-        selfie.read_client.connection_pool.disconnect()
+    def disconnect(selfie, write=True, read=True):
+        if write:
+            selfie.write_client.connection_pool.disconnect()
+        if read:
+            selfie.read_client.connection_pool.disconnect()
