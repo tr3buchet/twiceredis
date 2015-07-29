@@ -54,9 +54,18 @@ class DisconnectingSentinel(sentinel.Sentinel):
                 s['master-link-status'] == 'ok']
 
 
+class DisconnectRedis(redis.StrictRedis):
+    """
+    normal redis.StrictRedis class + disconnect() function
+    """
+    def disconnect(selfie):
+        selfie.connection_pool.disconnect()
+
+
 class TwiceRedis(object):
     """
     read and write sentinel connection pool backed redis client
+    with disconnecting sentinel clients and redis clients
     """
     generic_error = exceptions.RedisError
 
@@ -84,12 +93,12 @@ class TwiceRedis(object):
                         is_master=False, check_connection=check_connection,
                         password=password, **pool_kwargs)
 
-        selfie.write_client = redis.StrictRedis(connection_pool=master_pool,
-                                                socket_timeout=socket_timeout,
-                                                **client_kwargs)
-        selfie.read_client = redis.StrictRedis(connection_pool=slave_pool,
-                                               socket_timeout=socket_timeout,
-                                               **client_kwargs)
+        selfie.write_client = DisconnectRedis(connection_pool=master_pool,
+                                              socket_timeout=socket_timeout,
+                                              **client_kwargs)
+        selfie.read_client = DisconnectRedis(connection_pool=slave_pool,
+                                             socket_timeout=socket_timeout,
+                                             **client_kwargs)
 
     @property
     def master(selfie):
@@ -107,8 +116,6 @@ class TwiceRedis(object):
     def read(selfie):
         return selfie.read_client
 
-    def disconnect(selfie, write=True, read=True):
-        if write:
-            selfie.write_client.connection_pool.disconnect()
-        if read:
-            selfie.read_client.connection_pool.disconnect()
+    def disconnect(selfie):
+        selfie.write_client.disconnect()
+        selfie.read_client.disconnect()

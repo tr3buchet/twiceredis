@@ -2,6 +2,7 @@
 TwiceRedis
 ==========
 read and write sentinel connection pool backed redis client
+with disconnecting sentinel clients and redis clients
 
 when using a redis connection backed by a ``SentinelConnectionPool``,
 the pool is initialized to connect to either the master or slaves.
@@ -19,12 +20,12 @@ initialized to connect to the master or slaves respectively
 ``TwiceRedis`` also uses a ``DisconnectingSentinel`` class to drastically
 reduce the number of active connections to the redis sentinel service(s).
 This class drops connection to the chosen sentinel once the master or
-slave has been chosen.
+slave has been chosen
 
 The ``DisconnectionSentinel`` class also filters slaves a little more
 intelligently than the base ``Sentinel`` class does. In addition to
 insuring slaves are not ``sdown`` or ``odown`` it makes sure the slaves
-``master-link-status`` is 'ok'.
+``master-link-status`` is 'ok'
 
 ``TwiceRedis`` randomizes the sentinel list so each ``TwiceRedis``
 object will be connecting to a random sentinel in the list instead of
@@ -32,6 +33,10 @@ them all connecting to the first one (for as long as it works).
 this shuffling is probably a bit superfluous used in conjunction with
 ``DisconnectingSentinel``, but at worst will reduce the load on the
 first sentinel in the ``sentinels`` list
+
+``TwiceRedis`` also utilizes a subclass of ``StrictRedis`` called
+``DisconnectRedis`` that adds a ``disconnect()`` function to all the clients
+making it easier to manage individual connections to the redis services
 
 
 ~~~~~
@@ -64,7 +69,7 @@ to connect, get a key, and then disconnect to reduce active connections
 .. code:: python
 
     x = tr.slave.get('some key')
-    tr.disconnect()
+    tr.slave.disconnect()
 
 and afterward reconnection will happen seamlessly as needed \o/
 and chances are you'll hit a different slave
@@ -73,9 +78,18 @@ and chances are you'll hit a different slave
 
     x = tr.slave.get('some other key')
 
-it also disconnects any connection under ``tr.master`` as well, but you'll end
-up back on the same node when you do anything with ``tr.master`` that connects
-unless the master has changed in the meantime
+or if you want to disconnect both ``tr.master`` and ``tr.slave``,
+``tr.disconnect()`` can be used. it calls ``disconnect()`` on both
+the slave and master clients:
+
+.. code:: python
+    x = tr.slave.get('some key')
+    tr.master.publish('topic', x)
+    tr.disconnect()
+
+    # ... and later on reconnect seamlessly
+    tr.master.set('some key', 'le totes!')
+    x = tr.slave.get('some_key')
 
 
 ~~~~~~~
