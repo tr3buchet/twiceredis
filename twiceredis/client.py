@@ -81,7 +81,8 @@ class TwiceRedis(object):
         #                 good master or slaves during dicovery, in which case
         #                 the next in the list is tried. so we shuffle the list
         #                 here to distribute the sentinel load around
-        random.shuffle(list(sentinels))
+        sentinels = list(sentinels)
+        random.shuffle(sentinels)
 
         cp = sentinel.SentinelConnectionPool
         master_pool = cp(master_name,
