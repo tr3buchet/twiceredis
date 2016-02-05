@@ -66,16 +66,37 @@ class TwiceRedis(object):
     """
     read and write sentinel connection pool backed redis client
     with disconnecting sentinel clients and redis clients
+
+    examples
+    master_name = 'master33'
+    sentinels = [('host1', 26379), ('host2', 26379),...]
+    password = 'dobbyd0llars'
+    check_connection = True
+    min_other_sentinels = 2
+    socket_timeout = 5
+    socket_keepalive = True
+    socket_keepalive_options = {socket.TCP_KEEPIDLE: 1,
+                                socket.TCP_KEEPINTVL: 3,
+                                socket.TCP_KEEPCNT: 5}
+    pool_kwargs = additional connection options
+
+    # NOTE(tr3buchet): socket keepalive options:
+                       TCP_KEEPIDLE activates after (1 second) of idleness
+                       TCP_KEEPINTVL: keep alive send interval (3 seconds)
+                       TCP_KEEPCNT: close connection after (5) failed pings
+    # NOTE(tr3buchet): socket_timeout is used for both connect and send
+
     """
     generic_error = exceptions.RedisError
 
     def __init__(selfie, master_name, sentinels, password=None,
-                 check_connection=False, socket_timeout=None,
-                 min_other_sentinels=0,
-                 pool_kwargs=None, client_kwargs=None):
+                 check_connection=False, min_other_sentinels=0,
+                 socket_timeout=None, socket_keepalive=False,
+                 socket_keepalive_options=None,
+                 pool_kwargs=None):
 
         pool_kwargs = {} if pool_kwargs is None else pool_kwargs
-        client_kwargs = {} if client_kwargs is None else client_kwargs
+
         # NOTE(tr3buchet) always the first sentinel will be (re)used by the
         #                 connection pool unless it fails to provide a
         #                 good master or slaves during dicovery, in which case
@@ -88,18 +109,20 @@ class TwiceRedis(object):
         master_pool = cp(master_name,
                          DisconnectingSentinel(sentinels, min_other_sentinels),
                          is_master=True, check_connection=check_connection,
-                         password=password, **pool_kwargs)
+                         password=password, socket_timeout=socket_timeout,
+                         socket_keepalive=socket_keepalive,
+                         socket_keepalive_options=socket_keepalive_options,
+                         **pool_kwargs)
         slave_pool = cp(master_name,
                         DisconnectingSentinel(sentinels, min_other_sentinels),
                         is_master=False, check_connection=check_connection,
-                        password=password, **pool_kwargs)
+                        password=password, socket_timeout=socket_timeout,
+                        socket_keepalive=socket_keepalive,
+                        socket_keepalive_options=socket_keepalive_options,
+                        **pool_kwargs)
 
-        selfie.write_client = DisconnectRedis(connection_pool=master_pool,
-                                              socket_timeout=socket_timeout,
-                                              **client_kwargs)
-        selfie.read_client = DisconnectRedis(connection_pool=slave_pool,
-                                             socket_timeout=socket_timeout,
-                                             **client_kwargs)
+        selfie.write_client = DisconnectRedis(connection_pool=master_pool)
+        selfie.read_client = DisconnectRedis(connection_pool=slave_pool)
 
     @property
     def master(selfie):
