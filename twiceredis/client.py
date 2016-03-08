@@ -20,6 +20,10 @@ import redis
 from redis import sentinel
 from redis import exceptions
 import random
+import time
+
+import logging
+LOG = logging.getLogger(__name__)
 
 
 class DisconnectingSentinel(sentinel.Sentinel):
@@ -60,6 +64,115 @@ class DisconnectRedis(redis.StrictRedis):
     """
     def disconnect(selfie):
         selfie.connection_pool.disconnect()
+
+
+class Listener(object):
+    """
+    TwiceRedis based persistent message handler that can't lose messages
+
+    reliably listen for messages lpushed to a list.
+    when a message is received, in one transaction, the message
+    will be moved to a processing list. only after the message
+    is handled will it be removed from the processing list.
+
+    ## read_time ##
+    read_time is the duration we listen for a message before continuing to
+    the next iteration of the loop. it is used in conjunction with redis's
+    BRPOPLPUSH so Listener can loop slowly when there is little traffic
+    while going as quickly as possible when there is much traffic. it also
+    prevents timeout exceptions during the listen process. read_time should be
+    set to something less than the socket_timeout/tcp keepalive failure time.
+    listen will also generate a couple of packets every read_time interval
+    even if there are no messages being sent, this keeps the socket alive
+    and aids in the detection of a stale socket more quickly.
+
+    if you would rather not mess with read_time, a listen thread, or blocking
+    calls of any kind, use Lister.get_message(), it works like listen except it
+    just returns None immediately if there are no messages. You'll want your
+    handler to return message if you intend on using your own with get_message
+    because it will return the result of your handler. By default it'll just
+    log and return the message if you'd rather call your handler manually.
+
+    ## old messages ##
+    Listener's init will process any old messages laying around in the
+    processing list. if you have 2+ listeners listening to the same list, make
+    sure message handling is idempotent or use a different processing_suffix
+    for each listener. in general you want the processing_suffix to stay the
+    same when restarting a worker using Listener objects or messages could
+    be lost in the old processing list (ex don't generate new uuid each run)
+
+    ## arguments ##
+    twice_redis: instantiated twice_redis object
+    lijst: string name of the list the listener will be watching
+    handler: the function that handles the message (only takes msg as arg)
+    read_time: duration to block while waiting for message
+    processing_suffix: suffix added to lijst = list where messages are
+                       stored while being processed
+    """
+    def __init__(zelf, twice_redis, lijst, handler=None, read_time=5,
+                 processing_suffix='|processing'):
+        zelf.r = twice_redis
+        zelf.lijst = lijst
+        zelf._processing = lijst + processing_suffix
+        zelf.handler = handler or zelf._default_handler
+        zelf.read_time = read_time
+        zelf.active = True
+
+        # NOTE(tr3buchet): clean up old unfinished business
+        message = True
+        while message:
+            try:
+                message = zelf.r.master.lindex(zelf._processing, -1)
+                if message:
+                    LOG.warn('found old message: |%s|' % message)
+                    zelf._call_handler(message)
+            except zelf.r.generic_error as e:
+                LOG.exception(e)
+
+    def _default_handler(zelf, message):
+        LOG.debug('processing: %s' % message)
+        return message
+
+    def _call_handler(zelf, message):
+        try:
+            return zelf.handler(message)
+        except:
+            LOG.exception()
+        finally:
+            zelf.r.master.lrem(zelf._processing, -1, message)
+
+    def get_message(zelf):
+        """
+        get one message if available else return None
+        if message is available returns the result of handler(message)
+        does not block!
+
+        if you would like to call your handler manually, this is the way to
+        go. don't pass in a handler to Listener() and the default handler will
+        log and return the message for your own manual processing
+        """
+        try:
+            message = zelf.r.master.rpoplpush(zelf.lijst, zelf._processing)
+            if message:
+                # NOTE(tr3buchet): got a message, process it
+                LOG.debug('received: |%s|' % message)
+                return zelf._call_handler(message)
+        except zelf.r.generic_error:
+            LOG.exception()
+
+    def listen(zelf):
+        while zelf.active:
+            try:
+                msg = zelf.r.master.brpoplpush(zelf.lijst, zelf._processing,
+                                               zelf.read_time)
+                if msg:
+                    # NOTE(tr3buchet): got a message, process it
+                    LOG.debug('received: |%s|' % msg)
+                    zelf._call_handler(msg)
+            except zelf.r.generic_error:
+                LOG.exception()
+            finally:
+                time.sleep(0)
 
 
 class TwiceRedis(object):
@@ -106,15 +219,16 @@ class TwiceRedis(object):
         random.shuffle(sentinels)
 
         cp = sentinel.SentinelConnectionPool
-        master_pool = cp(master_name,
-                         DisconnectingSentinel(sentinels, min_other_sentinels),
+        sentinel_manager = DisconnectingSentinel(sentinels,
+                                                 min_other_sentinels,
+                                                 socket_timeout=socket_timeout)
+        master_pool = cp(master_name, sentinel_manager,
                          is_master=True, check_connection=check_connection,
                          password=password, socket_timeout=socket_timeout,
                          socket_keepalive=socket_keepalive,
                          socket_keepalive_options=socket_keepalive_options,
                          **pool_kwargs)
-        slave_pool = cp(master_name,
-                        DisconnectingSentinel(sentinels, min_other_sentinels),
+        slave_pool = cp(master_name, sentinel_manager,
                         is_master=False, check_connection=check_connection,
                         password=password, socket_timeout=socket_timeout,
                         socket_keepalive=socket_keepalive,
