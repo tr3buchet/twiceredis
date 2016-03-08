@@ -15,3 +15,4 @@
 #   limitations under the License.
 #
 from client import TwiceRedis
+from client import Listener
