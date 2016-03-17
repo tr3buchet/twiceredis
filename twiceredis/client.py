@@ -169,8 +169,8 @@ class Listener(object):
                     # NOTE(tr3buchet): got a message, process it
                     LOG.debug('received: |%s|' % msg)
                     zelf._call_handler(msg)
-            except zelf.r.generic_error:
-                LOG.exception()
+            except zelf.r.generic_error as e:
+                LOG.exception(e)
             finally:
                 time.sleep(0)
 

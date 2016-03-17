@@ -83,6 +83,7 @@ or if you want to disconnect both ``tr.master`` and ``tr.slave``,
 the slave and master clients:
 
 .. code:: python
+
     x = tr.slave.get('some key')
     tr.master.publish('topic', x)
     tr.disconnect()
