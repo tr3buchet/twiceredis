@@ -181,34 +181,73 @@ class TwiceRedis(object):
     with disconnecting sentinel clients and redis clients
 
     examples
+    # name give in redis/sentinel configs to the master
     master_name = 'master33'
+
+    # list of sentinels to connect to, can just be one tuple if only one
     sentinels = [('host1', 26379), ('host2', 26379),...]
+
     password = 'dobbyd0llars'
+
+    example pool and sentinel kwarg meanings
+    # NOTE(tr3buchet): the sentinel and server connections can be configured
+    #                  with different values. for example the sentinels do not
+    #                  need to have tcp keepalive enabled because the sentinel
+    #                  connections are so short lived. but you may if you wish
+    # NOTE(tr3buchet): if you don't wish to pass any kwargs to either the
+    #                  sentinel or server connection pools, pass in {}. if you
+    #                  pass in None the defaults will be used
+
+    # redis pings the master or slave before returning connecting from sentinel
     check_connection = True
-    min_other_sentinels = 2
-    socket_timeout = 5
+
+    # number of other sentinels that must be up for the sentinel to return
+    # a master or slave to you. useful to ensure a majority of sentinels are
+    # running. raises MasterNotFound if there aren't N number of other
+    # sentinels reachable. can be caught with TwiceRedis.generic_error.
+    # if you have only 1 sentinel, this must be 0
+    min_other_sentinels = 0
+
+    # time for a blocking read on a socket to timeout, raising TimeoutError
+    # catchable with TwiceRedis.generic_error
+    socket_timeout = 15
+
+    # timeout for establishing a socket connection, a ConnectionError will be
+    # raised if timeout is reached. catchable with TwiceRedis.generic_error
+    socket_connect_timeout = 15
+
+    # enable tcp socket keepalive
     socket_keepalive = True
+
+    # configure the specifics of tcp socket keepalive
+    #     TCP_KEEPIDLE activates after (1 second) of idleness
+    #     TCP_KEEPINTVL: keep alive send interval (3 seconds)
+    #     TCP_KEEPCNT: close connection after (5) failed pings
     socket_keepalive_options = {socket.TCP_KEEPIDLE: 1,
                                 socket.TCP_KEEPINTVL: 3,
                                 socket.TCP_KEEPCNT: 5}
-    pool_kwargs = additional connection options
 
-    # NOTE(tr3buchet): socket keepalive options:
-                       TCP_KEEPIDLE activates after (1 second) of idleness
-                       TCP_KEEPINTVL: keep alive send interval (3 seconds)
-                       TCP_KEEPCNT: close connection after (5) failed pings
     # NOTE(tr3buchet): socket_timeout is used for both connect and send
 
     """
     generic_error = exceptions.RedisError
+    DEFAULT_POOL_KWARGS = {'check_connection': True,
+                           'socket_timeout': 15,
+                           'socket_connect_timeout': 5,
+                           'socket_keepalive': True,
+                           'socket_keeplive_options': {socket.TCP_KEEPIDLE: 1,
+                                                       socket.TCP_KEEPINTVL: 3,
+                                                       socket.TCP_KEEPCNT: 5}}
+    DEFAULT_SENTINEL_KWARGS = {'min_other_sentinels': 0,
+                               'socket_timeout': 5,
+                               'socket_connect_timeout': 5}
 
     def __init__(selfie, master_name, sentinels, password=None,
-                 check_connection=False, min_other_sentinels=0,
-                 socket_timeout=None, socket_keepalive=False,
-                 socket_keepalive_options=None,
-                 pool_kwargs=None):
-
-        pool_kwargs = {} if pool_kwargs is None else pool_kwargs
+                 pool_kwargs=None, sentinel_kwargs=None):
+        if pool_kwargs is None:
+            pool_kwargs = DEFAULT_POOL_KWARGS
+        if sentinel_kwargs is None:
+            sentinel_kwargs = DEFAULT_SENTINEL_KWARGS
 
         # NOTE(tr3buchet) always the first sentinel will be (re)used by the
         #                 connection pool unless it fails to provide a
@@ -219,24 +258,15 @@ class TwiceRedis(object):
         random.shuffle(sentinels)
 
         cp = sentinel.SentinelConnectionPool
-        sentinel_manager = DisconnectingSentinel(sentinels,
-                                                 min_other_sentinels,
-                                                 socket_timeout=socket_timeout)
-        master_pool = cp(master_name, sentinel_manager,
-                         is_master=True, check_connection=check_connection,
-                         password=password, socket_timeout=socket_timeout,
-                         socket_keepalive=socket_keepalive,
-                         socket_keepalive_options=socket_keepalive_options,
-                         **pool_kwargs)
-        slave_pool = cp(master_name, sentinel_manager,
-                        is_master=False, check_connection=check_connection,
-                        password=password, socket_timeout=socket_timeout,
-                        socket_keepalive=socket_keepalive,
-                        socket_keepalive_options=socket_keepalive_options,
-                        **pool_kwargs)
+        sentinel_manager = DisconnectingSentinel(sentinels, **sentinel_kwargs)
+        master_pool = cp(master_name, sentinel_manager, password=password,
+                         is_master=True, **pool_kwargs)
+        slave_pool = cp(master_name, sentinel_manager, password=password,
+                        is_master=False, **pool_kwargs)
 
         selfie.write_client = DisconnectRedis(connection_pool=master_pool)
         selfie.read_client = DisconnectRedis(connection_pool=slave_pool)
+
 
     @property
     def master(selfie):
