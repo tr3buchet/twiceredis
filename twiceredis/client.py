@@ -245,9 +245,9 @@ class TwiceRedis(object):
     def __init__(selfie, master_name, sentinels, password=None,
                  pool_kwargs=None, sentinel_kwargs=None):
         if pool_kwargs is None:
-            pool_kwargs = DEFAULT_POOL_KWARGS
+            pool_kwargs = selfie.DEFAULT_POOL_KWARGS
         if sentinel_kwargs is None:
-            sentinel_kwargs = DEFAULT_SENTINEL_KWARGS
+            sentinel_kwargs = selfie.DEFAULT_SENTINEL_KWARGS
 
         # NOTE(tr3buchet) always the first sentinel will be (re)used by the
         #                 connection pool unless it fails to provide a
