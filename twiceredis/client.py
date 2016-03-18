@@ -15,7 +15,7 @@
 #   limitations under the License.
 #
 
-
+import socket
 import redis
 from redis import sentinel
 from redis import exceptions
