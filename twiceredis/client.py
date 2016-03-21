@@ -126,8 +126,8 @@ class Listener(object):
                 if message:
                     LOG.warn('found old message: |%s|' % message)
                     zelf._call_handler(message)
-            except zelf.r.generic_error as e:
-                LOG.exception(e)
+            except zelf.r.generic_error:
+                LOG.exception('')
 
     def _default_handler(zelf, message):
         LOG.debug('processing: %s' % message)
@@ -137,7 +137,7 @@ class Listener(object):
         try:
             return zelf.handler(message)
         except:
-            LOG.exception()
+            LOG.exception('')
         finally:
             zelf.r.master.lrem(zelf._processing, -1, message)
 
@@ -158,9 +158,16 @@ class Listener(object):
                 LOG.debug('received: |%s|' % message)
                 return zelf._call_handler(message)
         except zelf.r.generic_error:
-            LOG.exception()
+            LOG.exception('')
 
     def listen(zelf):
+        """
+        listen indefinitely, handling messages as they come
+
+        all redis specific exceptions are handled, anything your handler raises
+        will not be handled. setting active to False on the Listener object
+        will gracefully stop the listen() function
+        """
         while zelf.active:
             try:
                 msg = zelf.r.master.brpoplpush(zelf.lijst, zelf._processing,
@@ -169,8 +176,8 @@ class Listener(object):
                     # NOTE(tr3buchet): got a message, process it
                     LOG.debug('received: |%s|' % msg)
                     zelf._call_handler(msg)
-            except zelf.r.generic_error as e:
-                LOG.exception(e)
+            except zelf.r.generic_error:
+                LOG.exception('')
             finally:
                 time.sleep(0)
 
