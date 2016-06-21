@@ -238,13 +238,18 @@ class TwiceRedis(object):
 
     """
     generic_error = exceptions.RedisError
-    _sko = {socket.TCP_KEEPIDLE: 1,
-            socket.TCP_KEEPINTVL: 3,
-            socket.TCP_KEEPCNT: 5}
+    if not hasattr(socket, 'TCP_KEEPIDLE'):
+        _sko = {}
+        ko = False
+    else:
+        _sko = {socket.TCP_KEEPIDLE: 1,
+                socket.TCP_KEEPINTVL: 3,
+                socket.TCP_KEEPCNT: 5}
+        ko = True
     DEFAULT_POOL_KWARGS = {'check_connection': True,
                            'socket_timeout': 15,
                            'socket_connect_timeout': 5,
-                           'socket_keepalive': True,
+                           'socket_keepalive': ko,
                            'socket_keepalive_options': _sko}
     DEFAULT_SENTINEL_KWARGS = {'min_other_sentinels': 0,
                                'socket_timeout': 5,
